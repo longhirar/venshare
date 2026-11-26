@@ -1,4 +1,6 @@
-import { Button, React, Text, Toasts } from "@webpack/common";
+import { Button } from "@components/Button";
+import { Text } from "@components/Text";
+import { React, showToast } from "@webpack/common";
 
 import { useVenshareState } from "../store";
 import { webrtcManager } from "../webrtc";
@@ -23,10 +25,9 @@ export function VoiceBarPanel() {
             await webrtcManager.requestWatch(userId, currentVoiceChannelId);
             openStreamViewerModal(username, title);
         } catch (err) {
-            Toasts.show({
-                message: `Failed to connect to stream: ${String(err)}`,
-                type: Toasts.Type.FAILURE,
-                id: Toasts.genId()
+            showToast({
+                text: `Failed to connect to stream: ${String(err)}`,
+                variant: "critical"
             });
         }
     };
@@ -43,21 +44,21 @@ export function VoiceBarPanel() {
             }}
         >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <Text variant="text-xs/semibold" color="text-normal">
+                <Text size="xs" weight="semibold">
                     {isStreaming ? `P2P Live (${activePeersCount} watching)` : "Venshare P2P"}
                 </Text>
                 {isStreaming ? (
                     <Button
-                        size={Button.Sizes.MIN}
-                        color={Button.Colors.RED}
+                        size="min"
+                        variant="dangerPrimary"
                         onClick={() => void webrtcManager.stopStreaming(currentVoiceChannelId)}
                     >
                         Stop
                     </Button>
                 ) : (
                     <Button
-                        size={Button.Sizes.MIN}
-                        color={Button.Colors.BRAND}
+                        size="min"
+                        variant="primary"
                         onClick={() => openGoLiveModal(currentVoiceChannelId)}
                     >
                         Share Screen
@@ -66,7 +67,15 @@ export function VoiceBarPanel() {
             </div>
 
             {isStreaming && streamTitle && (
-                <Text variant="text-xs/normal" color="text-muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <Text
+                    size="xs"
+                    style={{
+                        color: "var(--text-muted)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis"
+                    }}
+                >
                     {streamTitle}
                 </Text>
             )}
@@ -85,14 +94,15 @@ export function VoiceBarPanel() {
                     }}
                 >
                     <Text
-                        variant="text-xs/medium"
+                        size="xs"
+                        weight="medium"
                         style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                     >
                         LIVE: {stream.username}
                     </Text>
                     <Button
-                        size={Button.Sizes.MIN}
-                        color={Button.Colors.GREEN}
+                        size="min"
+                        variant="positive"
                         onClick={() => void handleWatch(stream.userId, stream.username, stream.title)}
                     >
                         Watch

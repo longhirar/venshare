@@ -1,11 +1,11 @@
 import { ApplicationCommandInputType } from "@api/Commands";
 import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
-import { SelectedChannelStore, Toasts, UserStore } from "@webpack/common";
+import { SelectedChannelStore, showToast, UserStore } from "@webpack/common";
 
+import { decodeSignal, SIGNAL_PREFIX } from "./codec";
 import { openGoLiveModal } from "./components/GoLiveModal";
 import { VoiceBarPanel } from "./components/VoiceBarPanel";
-import { decodeSignal, SIGNAL_PREFIX } from "./codec";
 import { settings } from "./settings";
 import { flushPendingDeletes } from "./signaling";
 import { venshareStore } from "./store";
@@ -42,10 +42,9 @@ export default definePlugin({
             execute: () => {
                 const vcId = SelectedChannelStore.getVoiceChannelId();
                 if (!vcId) {
-                    Toasts.show({
-                        message: "Join a voice channel first to start Venshare.",
-                        type: Toasts.Type.FAILURE,
-                        id: Toasts.genId()
+                    showToast({
+                        text: "Join a voice channel first to start Venshare.",
+                        variant: "critical"
                     });
                     return;
                 }

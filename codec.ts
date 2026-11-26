@@ -29,8 +29,8 @@ function base64UrlToBytes(str: string): Uint8Array {
 async function deflate(input: Uint8Array): Promise<Uint8Array> {
     const cs = new CompressionStream("deflate-raw");
     const writer = cs.writable.getWriter();
-    writer.write(input);
-    writer.close();
+    void writer.write(input as BufferSource);
+    void writer.close();
     const buf = await new Response(cs.readable).arrayBuffer();
     return new Uint8Array(buf);
 }
@@ -38,8 +38,8 @@ async function deflate(input: Uint8Array): Promise<Uint8Array> {
 async function inflate(input: Uint8Array): Promise<Uint8Array> {
     const ds = new DecompressionStream("deflate-raw");
     const writer = ds.writable.getWriter();
-    writer.write(input);
-    writer.close();
+    void writer.write(input as BufferSource);
+    void writer.close();
     const buf = await new Response(ds.readable).arrayBuffer();
     return new Uint8Array(buf);
 }

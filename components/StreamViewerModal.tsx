@@ -1,20 +1,13 @@
-import {
-    ModalCloseButton,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-    ModalProps,
-    ModalRoot,
-    ModalSize,
-    openModal
-} from "@utils/modal";
-import { Button, React, Text, useEffect, useRef, useState } from "@webpack/common";
+import { Button } from "@components/Button";
+import { Text } from "@components/Text";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Modal, openModal, React, useEffect, useRef, useState } from "@webpack/common";
 
 import { useVenshareState } from "../store";
 import { webrtcManager, WebRtcStatsSnapshot } from "../webrtc";
 
 interface StreamViewerModalProps {
-    modalProps: ModalProps;
+    modalProps: RenderModalProps;
     streamerName: string;
     streamTitle: string;
 }
@@ -68,68 +61,76 @@ function StreamViewerModal({ modalProps, streamerName, streamTitle }: StreamView
     };
 
     return (
-        <ModalRoot {...modalProps} size={ModalSize.LARGE}>
-            <ModalHeader separator={false}>
-                <div style={{ flexGrow: 1 }}>
-                    <Text variant="heading-md/semibold">
-                        {streamerName} — {streamTitle}
-                    </Text>
-                    <Text variant="text-xs/normal" color="text-muted">
-                        Status: {viewerState}
-                        {stats && stats.width > 0
-                            ? ` • ${stats.width}x${stats.height} @ ${stats.fps}fps • ${stats.bitrateKbps} kbps • ${stats.candidateType} (${stats.ipFamily}/${stats.protocol})`
-                            : ""}
-                    </Text>
-                </div>
-                <ModalCloseButton onClick={handleClose} />
-            </ModalHeader>
-
-            <ModalContent style={{ padding: 0, background: "#000" }}>
+        <Modal
+            {...modalProps}
+            size="lg"
+            title={`${streamerName} — ${streamTitle}`}
+            subtitle={
+                `Status: ${viewerState}` +
+                (stats && stats.width > 0
+                    ? ` • ${stats.width}x${stats.height} @ ${stats.fps}fps • ${stats.bitrateKbps} kbps • ${stats.candidateType} (${stats.ipFamily}/${stats.protocol})`
+                    : "")
+            }
+            actions={[
+                {
+                    text: "Leave Stream",
+                    variant: "critical-primary",
+                    onClick: handleClose
+                }
+            ]}
+        >
+            <div style={{ background: "#000", borderRadius: 6, overflow: "hidden" }}>
                 <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     style={{
                         width: "100%",
-                        maxHeight: "70vh",
+                        maxHeight: "65vh",
                         display: "block",
                         background: "#000"
                     }}
                 />
-            </ModalContent>
+            </div>
 
-            <ModalFooter>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Button size={Button.Sizes.SMALL} onClick={() => setMuted(m => !m)}>
-                            {muted ? "Unmute" : "Mute"}
-                        </Button>
-                        <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.05}
-                            value={muted ? 0 : volume}
-                            onChange={e => {
-                                setMuted(false);
-                                setVolume(Number(e.target.value));
-                            }}
-                        />
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                        <Button size={Button.Sizes.SMALL} onClick={handlePip}>
-                            PiP
-                        </Button>
-                        <Button size={Button.Sizes.SMALL} onClick={handleFullscreen}>
-                            Fullscreen
-                        </Button>
-                        <Button size={Button.Sizes.SMALL} color={Button.Colors.RED} onClick={handleClose}>
-                            Leave Stream
-                        </Button>
-                    </div>
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    marginTop: 12
+                }}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Button size="small" variant="secondary" onClick={() => setMuted(m => !m)}>
+                        {muted ? "Unmute" : "Mute"}
+                    </Button>
+                    <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={muted ? 0 : volume}
+                        onChange={e => {
+                            setMuted(false);
+                            setVolume(Number(e.target.value));
+                        }}
+                    />
+                    <Text size="xs" style={{ color: "var(--text-muted)" }}>
+                        {Math.round((muted ? 0 : volume) * 100)}%
+                    </Text>
                 </div>
-            </ModalFooter>
-        </ModalRoot>
+                <div style={{ display: "flex", gap: 8 }}>
+                    <Button size="small" variant="secondary" onClick={handlePip}>
+                        PiP
+                    </Button>
+                    <Button size="small" variant="secondary" onClick={handleFullscreen}>
+                        Fullscreen
+                    </Button>
+                </div>
+            </div>
+        </Modal>
     );
 }
 

@@ -1,15 +1,9 @@
-import {
-    ModalCloseButton,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-    ModalProps,
-    ModalRoot,
-    ModalSize,
-    openModal
-} from "@utils/modal";
-import { Button, Forms, React, Switch, Text, TextInput, Toasts, useEffect, useState } from "@webpack/common";
+import { Button } from "@components/Button";
+import { FormSwitch } from "@components/FormSwitch";
+import { Text } from "@components/Text";
 import { PluginNative } from "@utils/types";
+import { RenderModalProps } from "@vencord/discord-types";
+import { Modal, openModal, React, showToast, TextInput, useEffect, useState } from "@webpack/common";
 
 import type { CaptureSource } from "../native";
 import { settings } from "../settings";
@@ -19,7 +13,7 @@ import { ResolutionPreset, webrtcManager } from "../webrtc";
 const Native = VencordNative.pluginHelpers.Venshare as PluginNative<typeof import("../native")>;
 
 interface GoLiveModalProps {
-    modalProps: ModalProps;
+    modalProps: RenderModalProps;
     channelId: string;
 }
 
@@ -54,10 +48,9 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                 if (list.length > 0) setSelectedId(list[0].id);
             })
             .catch(err => {
-                Toasts.show({
-                    message: `Failed to list screens: ${String(err)}`,
-                    type: Toasts.Type.FAILURE,
-                    id: Toasts.genId()
+                showToast({
+                    text: `Failed to list screens: ${String(err)}`,
+                    variant: "critical"
                 });
             })
             .finally(() => {
@@ -94,10 +87,9 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
             });
             modalProps.onClose();
         } catch (err) {
-            Toasts.show({
-                message: `Failed to start P2P stream: ${String(err)}`,
-                type: Toasts.Type.FAILURE,
-                id: Toasts.genId()
+            showToast({
+                text: `Failed to start P2P stream: ${String(err)}`,
+                variant: "critical"
             });
         } finally {
             setStarting(false);
@@ -105,18 +97,30 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
     };
 
     return (
-        <ModalRoot {...modalProps} size={ModalSize.LARGE}>
-            <ModalHeader separator={false}>
-                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>
-                    Venshare — P2P Screen Share
+        <Modal
+            {...modalProps}
+            size="lg"
+            title="Venshare — P2P Screen Share"
+            actions={[
+                {
+                    text: "Cancel",
+                    variant: "secondary",
+                    onClick: modalProps.onClose
+                },
+                {
+                    text: starting ? "Starting..." : "Go Live (P2P)",
+                    variant: "primary",
+                    disabled: !selectedId || starting,
+                    onClick: handleStart
+                }
+            ]}
+        >
+            <div style={{ paddingBottom: 16 }}>
+                <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 8, textTransform: "uppercase" }}>
+                    Choose Screen or Window
                 </Text>
-                <ModalCloseButton onClick={modalProps.onClose} />
-            </ModalHeader>
-
-            <ModalContent style={{ paddingBottom: 16 }}>
-                <Forms.FormTitle tag="h5">Choose Screen or Window</Forms.FormTitle>
                 {loading ? (
-                    <Text variant="text-sm/normal" color="text-muted">Loading capture sources...</Text>
+                    <Text size="sm" style={{ color: "var(--text-muted)" }}>Loading capture sources...</Text>
                 ) : (
                     <div
                         style={{
@@ -180,13 +184,15 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                     <div>
-                        <Forms.FormTitle tag="h5">Resolution</Forms.FormTitle>
+                        <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 6, textTransform: "uppercase" }}>
+                            Resolution
+                        </Text>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             {(["720", "1080", "1440", "source"] as ResolutionPreset[]).map(res => (
                                 <Button
                                     key={res}
-                                    size={Button.Sizes.SMALL}
-                                    color={resolution === res ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                                    size="small"
+                                    variant={resolution === res ? "primary" : "secondary"}
                                     onClick={() => setResolution(res)}
                                 >
                                     {res === "source" ? "Source" : `${res}p`}
@@ -196,13 +202,15 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                     </div>
 
                     <div>
-                        <Forms.FormTitle tag="h5">Frame Rate</Forms.FormTitle>
+                        <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 6, textTransform: "uppercase" }}>
+                            Frame Rate
+                        </Text>
                         <div style={{ display: "flex", gap: 6 }}>
                             {[30, 60].map(targetFps => (
                                 <Button
                                     key={targetFps}
-                                    size={Button.Sizes.SMALL}
-                                    color={fps === targetFps ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                                    size="small"
+                                    variant={fps === targetFps ? "primary" : "secondary"}
                                     onClick={() => setFps(targetFps)}
                                 >
                                     {targetFps} FPS
@@ -213,7 +221,9 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <Forms.FormTitle tag="h5">Max Video Bitrate: {bitrateMbps} Mbps</Forms.FormTitle>
+                    <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 6, textTransform: "uppercase" }}>
+                        Max Video Bitrate: {bitrateMbps} Mbps
+                    </Text>
                     <input
                         type="range"
                         min={2}
@@ -226,13 +236,15 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <Forms.FormTitle tag="h5">STUN Server (P2P / IPv6)</Forms.FormTitle>
+                    <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 6, textTransform: "uppercase" }}>
+                        STUN Server (P2P / IPv6)
+                    </Text>
                     <div style={{ display: "flex", gap: 6, marginBottom: stunProvider === "custom" ? 8 : 0 }}>
                         {STUN_OPTIONS.map(opt => (
                             <Button
                                 key={opt.value}
-                                size={Button.Sizes.SMALL}
-                                color={stunProvider === opt.value ? Button.Colors.BRAND : Button.Colors.PRIMARY}
+                                size="small"
+                                variant={stunProvider === opt.value ? "primary" : "secondary"}
                                 onClick={() => handleStunChange(opt.value)}
                             >
                                 {opt.label}
@@ -251,33 +263,15 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                     )}
                 </div>
 
-                <Switch
+                <FormSwitch
+                    title="Share Audio"
+                    description="Capture desktop/window audio (works best on Windows & macOS 13+)"
                     value={audio}
                     onChange={setAudio}
-                    note="Capture desktop/window audio (works best on Windows & macOS 13+)"
                     hideBorder
-                >
-                    Share Audio
-                </Switch>
-            </ModalContent>
-
-            <ModalFooter>
-                <Button
-                    color={Button.Colors.BRAND}
-                    disabled={!selectedId || starting}
-                    onClick={handleStart}
-                >
-                    {starting ? "Starting..." : "Go Live (P2P)"}
-                </Button>
-                <Button
-                    color={Button.Colors.TRANSPARENT}
-                    look={Button.Looks.LINK}
-                    onClick={modalProps.onClose}
-                >
-                    Cancel
-                </Button>
-            </ModalFooter>
-        </ModalRoot>
+                />
+            </div>
+        </Modal>
     );
 }
 
