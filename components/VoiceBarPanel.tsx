@@ -36,7 +36,11 @@ export function VoiceBarPanel() {
         <div
             style={{
                 padding: "8px 10px",
-                borderTop: "1px solid var(--background-modifier-accent)",
+                margin: "0 8px 6px 8px",
+                borderRadius: 8,
+                border: isStreaming
+                    ? "1px solid var(--status-positive)"
+                    : "1px solid var(--background-modifier-accent)",
                 background: "var(--background-secondary-alt)",
                 display: "flex",
                 flexDirection: "column",
@@ -44,9 +48,29 @@ export function VoiceBarPanel() {
             }}
         >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <Text size="xs" weight="semibold">
-                    {isStreaming ? `P2P Live (${activePeersCount} watching)` : "Venshare P2P"}
-                </Text>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <span
+                        style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            background: isStreaming ? "#23a55a" : "var(--text-muted)"
+                        }}
+                    />
+                    <Text
+                        size="xs"
+                        weight="semibold"
+                        style={{
+                            color: isStreaming ? "#23a55a" : "var(--text-normal)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis"
+                        }}
+                    >
+                        {isStreaming ? `P2P LIVE (${activePeersCount} watching)` : "Venshare P2P"}
+                    </Text>
+                </div>
                 {isStreaming ? (
                     <Button
                         size="min"
@@ -75,8 +99,9 @@ export function VoiceBarPanel() {
                         overflow: "hidden",
                         textOverflow: "ellipsis"
                     }}
+                    title={streamTitle}
                 >
-                    {streamTitle}
+                    Sharing: {streamTitle}
                 </Text>
             )}
 
@@ -98,7 +123,7 @@ export function VoiceBarPanel() {
                         weight="medium"
                         style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                     >
-                        LIVE: {stream.username}
+                        ● LIVE: {stream.username}
                     </Text>
                     <Button
                         size="min"

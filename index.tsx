@@ -1,7 +1,7 @@
 import { ApplicationCommandInputType } from "@api/Commands";
 import ErrorBoundary from "@components/ErrorBoundary";
 import definePlugin from "@utils/types";
-import { SelectedChannelStore, showToast, UserStore } from "@webpack/common";
+import { React, SelectedChannelStore, showToast, UserStore } from "@webpack/common";
 
 import { decodeSignal, SIGNAL_PREFIX } from "./codec";
 import { openGoLiveModal } from "./components/GoLiveModal";
@@ -24,15 +24,24 @@ export default definePlugin({
 
     patches: [
         {
-            find: "rtcConnectionStatus",
+            find: "#{intl::USER_PROFILE_ACCOUNT_POPOUT_BUTTON_A11Y_LABEL}",
             replacement: {
-                match: /(\.Fragment,\{children:\[)/,
-                replace: "$1$self.renderVoiceBarPanel(),"
+                match: /(?<=\i\.jsxs?\)\()(\i),{(?=[^}]*?userTag:\i,occluded:)/,
+                replace: "$self.PanelWrapper,{VencordOriginal:$1,"
             }
         }
     ],
 
-    renderVoiceBarPanel: ErrorBoundary.wrap(VoiceBarPanel, { noop: true }),
+    PanelWrapper({ VencordOriginal, ...props }: { VencordOriginal: React.ComponentType<any>; [key: string]: any }) {
+        return (
+            <>
+                <ErrorBoundary noop>
+                    <VoiceBarPanel />
+                </ErrorBoundary>
+                <VencordOriginal {...props} />
+            </>
+        );
+    },
 
     commands: [
         {
@@ -82,13 +91,22 @@ export default definePlugin({
 
             if (!me || !currentVc) return;
 
+            let someoneJoinedMyVc = false;
             for (const vs of voiceStates) {
-                if (vs.userId !== me.id && vs.channelId !== currentVc) {
+                if (vs.userId === me.id) continue;
+                if (vs.channelId !== currentVc) {
                     venshareStore.removeAvailableStream(vs.userId);
                     if (venshareStore.getState().watchingUserId === vs.userId) {
                         webrtcManager.stopWatching();
                     }
+                } else {
+                    someoneJoinedMyVc = true;
                 }
+            }
+
+            // Re-announce active stream when another peer joins our voice channel
+            if (someoneJoinedMyVc && venshareStore.getState().isStreaming) {
+                void webrtcManager.reannounceStream(currentVc);
             }
         }
     },

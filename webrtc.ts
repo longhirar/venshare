@@ -1,4 +1,4 @@
-import { UserStore } from "@webpack/common";
+import { showToast, UserStore } from "@webpack/common";
 
 import { SignalPayload } from "./codec";
 import { settings } from "./settings";
@@ -128,17 +128,26 @@ class WebRtcManager {
         });
 
         venshareStore.setStreaming(true, opts.sourceName, stream);
+        showToast({
+            text: `Venshare P2P Live: ${opts.sourceName}`,
+            variant: "success"
+        });
 
+        await this.reannounceStream(channelId);
+    }
+
+    async reannounceStream(channelId: string): Promise<void> {
+        const title = venshareStore.getState().streamTitle;
         const me = UserStore.getCurrentUser();
-        if (me) {
-            await sendSignal(channelId, {
-                t: "announce",
-                from: me.id,
-                name: me.globalName || me.username,
-                vc: channelId,
-                title: opts.sourceName
-            });
-        }
+        if (!this.localStream || !title || !me) return;
+
+        await sendSignal(channelId, {
+            t: "announce",
+            from: me.id,
+            name: me.globalName || me.username,
+            vc: channelId,
+            title
+        });
     }
 
     async stopStreaming(channelId?: string): Promise<void> {
