@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Venshare Linux Installer (Fedora / Arch / Ubuntu / Flatpak)
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<USER>/venshare/main/scripts/install-linux.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/longhirar/venshare/main/scripts/install-linux.sh | bash
 # Or with a custom tarball URL:
 #   VENSHARE_DIST_URL="https://..." curl -fsSL ... | bash
 
-REPO="${VENSHARE_REPO:-longhi/venshare}"
+REPO="${VENSHARE_REPO:-longhirar/venshare}"
 DIST_URL="${VENSHARE_DIST_URL:-https://github.com/${REPO}/releases/latest/download/venshare-dist.tar.gz}"
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/venshare"
 INSTALLER_BIN="$INSTALL_DIR/VencordInstallerCli-linux"
