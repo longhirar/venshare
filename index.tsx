@@ -18,7 +18,7 @@ interface VoiceStateUpdate {
 
 export default definePlugin({
     name: "Venshare",
-    description: "Serverless P2P WebRTC screen sharing over STUN with auto-deleting Discord signaling.",
+    description: "Serverless P2P WebRTC screen sharing over Cloudflare TURN / Custom TURN/STUN with auto-deleting Discord signaling.",
     authors: [{ name: "longhi", id: 0n }],
     settings,
 

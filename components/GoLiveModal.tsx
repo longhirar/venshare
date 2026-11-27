@@ -5,9 +5,9 @@ import { PluginNative } from "@utils/types";
 import { RenderModalProps } from "@vencord/discord-types";
 import { Modal, openModal, React, showToast, TextInput, useEffect, useState } from "@webpack/common";
 
+import { clearTurnCache, IceProvider, testTurnConfig } from "../ice";
 import type { CaptureSource } from "../native";
 import { settings } from "../settings";
-import { StunProvider } from "../stun";
 import { ResolutionPreset, webrtcManager } from "../webrtc";
 
 const Native = VencordNative.pluginHelpers.Venshare as PluginNative<typeof import("../native")>;
@@ -17,10 +17,10 @@ interface GoLiveModalProps {
     channelId: string;
 }
 
-const STUN_OPTIONS: Array<{ value: StunProvider; label: string }> = [
-    { value: "cf", label: "Cloudflare" },
-    { value: "google", label: "Google" },
-    { value: "custom", label: "Custom" }
+const ICE_OPTIONS: Array<{ value: IceProvider; label: string }> = [
+    { value: "cf-turn", label: "Cloudflare TURN" },
+    { value: "custom-turn", label: "Custom TURN/STUN" },
+    { value: "stun-only", label: "STUN Only" }
 ];
 
 function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
@@ -33,10 +33,18 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
     const [fps, setFps] = useState<number>(Number(settings.store.defaultFps) || 60);
     const [bitrateMbps, setBitrateMbps] = useState<number>(Number(settings.store.videoBitrateMbps) || 8);
     const [audio, setAudio] = useState(true);
-    const [stunProvider, setStunProvider] = useState<StunProvider>(
-        (settings.store.stunProvider as StunProvider) ?? "cf"
+
+    const [iceProvider, setIceProvider] = useState<IceProvider>(
+        (settings.store.iceProvider as IceProvider) ?? "cf-turn"
     );
-    const [customStun, setCustomStun] = useState<string>(settings.store.customStunUrl ?? "");
+    const [cfTurnKeyId, setCfTurnKeyId] = useState<string>(settings.store.cfTurnKeyId ?? "");
+    const [cfTurnApiToken, setCfTurnApiToken] = useState<string>(settings.store.cfTurnApiToken ?? "");
+    const [customTurnUrls, setCustomTurnUrls] = useState<string>(settings.store.customTurnUrls ?? "");
+    const [customTurnUsername, setCustomTurnUsername] = useState<string>(settings.store.customTurnUsername ?? "");
+    const [customTurnCredential, setCustomTurnCredential] = useState<string>(settings.store.customTurnCredential ?? "");
+    const [forceTurnRelay, setForceTurnRelay] = useState<boolean>(Boolean(settings.store.forceTurnRelay));
+
+    const [testingTurn, setTestingTurn] = useState(false);
     const [starting, setStarting] = useState(false);
 
     useEffect(() => {
@@ -61,19 +69,46 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
         };
     }, []);
 
-    const handleStunChange = (provider: StunProvider) => {
-        setStunProvider(provider);
-        settings.store.stunProvider = provider;
+    const persistIceSettings = () => {
+        settings.store.iceProvider = iceProvider;
+        settings.store.cfTurnKeyId = cfTurnKeyId;
+        settings.store.cfTurnApiToken = cfTurnApiToken;
+        settings.store.customTurnUrls = customTurnUrls;
+        settings.store.customTurnUsername = customTurnUsername;
+        settings.store.customTurnCredential = customTurnCredential;
+        settings.store.forceTurnRelay = forceTurnRelay;
+    };
+
+    const handleIceProviderChange = (provider: IceProvider) => {
+        setIceProvider(provider);
+        settings.store.iceProvider = provider;
+        clearTurnCache();
+    };
+
+    const handleTestTurn = async () => {
+        persistIceSettings();
+        setTestingTurn(true);
+        try {
+            const result = await testTurnConfig();
+            showToast({
+                text: `ICE config OK (${result.serverCount} server group${result.serverCount === 1 ? "" : "s"}, TURN ${result.hasTurn ? "enabled" : "not present"})`,
+                variant: "success"
+            });
+        } catch (err) {
+            showToast({
+                text: err instanceof Error ? err.message : String(err),
+                variant: "critical"
+            });
+        } finally {
+            setTestingTurn(false);
+        }
     };
 
     const handleStart = async () => {
         const chosen = sources.find(s => s.id === selectedId);
         if (!chosen) return;
 
-        settings.store.stunProvider = stunProvider;
-        if (stunProvider === "custom") {
-            settings.store.customStunUrl = customStun;
-        }
+        persistIceSettings();
 
         setStarting(true);
         try {
@@ -88,7 +123,7 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
             modalProps.onClose();
         } catch (err) {
             showToast({
-                text: `Failed to start P2P stream: ${String(err)}`,
+                text: `Failed to start stream: ${err instanceof Error ? err.message : String(err)}`,
                 variant: "critical"
             });
         } finally {
@@ -100,7 +135,7 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
         <Modal
             {...modalProps}
             size="lg"
-            title="Venshare — P2P Screen Share"
+            title="Venshare — WebRTC Screen Share"
             actions={[
                 {
                     text: "Cancel",
@@ -108,7 +143,7 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                     onClick: modalProps.onClose
                 },
                 {
-                    text: starting ? "Starting..." : "Go Live (P2P)",
+                    text: starting ? "Starting..." : "Go Live",
                     variant: "primary",
                     disabled: !selectedId || starting,
                     onClick: handleStart
@@ -127,7 +162,7 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                             display: "grid",
                             gridTemplateColumns: "repeat(auto-fill, minmax(175px, 1fr))",
                             gap: 10,
-                            maxHeight: 260,
+                            maxHeight: 240,
                             overflowY: "auto",
                             padding: 4,
                             marginBottom: 16
@@ -236,36 +271,108 @@ function GoLiveModal({ modalProps, channelId }: GoLiveModalProps) {
                 </div>
 
                 <div style={{ marginBottom: 12 }}>
-                    <Text size="xs" weight="semibold" tag="h5" style={{ marginBottom: 6, textTransform: "uppercase" }}>
-                        STUN Server (P2P / IPv6)
-                    </Text>
-                    <div style={{ display: "flex", gap: 6, marginBottom: stunProvider === "custom" ? 8 : 0 }}>
-                        {STUN_OPTIONS.map(opt => (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                        <Text size="xs" weight="semibold" tag="h5" style={{ textTransform: "uppercase" }}>
+                            ICE / TURN Server
+                        </Text>
+                        <Button
+                            size="min"
+                            variant="secondary"
+                            disabled={testingTurn}
+                            onClick={() => void handleTestTurn()}
+                        >
+                            {testingTurn ? "Testing..." : "Test Config"}
+                        </Button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: iceProvider !== "stun-only" ? 8 : 0 }}>
+                        {ICE_OPTIONS.map(opt => (
                             <Button
                                 key={opt.value}
                                 size="small"
-                                variant={stunProvider === opt.value ? "primary" : "secondary"}
-                                onClick={() => handleStunChange(opt.value)}
+                                variant={iceProvider === opt.value ? "primary" : "secondary"}
+                                onClick={() => handleIceProviderChange(opt.value)}
                             >
                                 {opt.label}
                             </Button>
                         ))}
                     </div>
-                    {stunProvider === "custom" && (
-                        <TextInput
-                            value={customStun}
-                            onChange={val => {
-                                setCustomStun(val);
-                                settings.store.customStunUrl = val;
-                            }}
-                            placeholder="stun:your-stun-server:3478"
-                        />
+
+                    {iceProvider === "cf-turn" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <TextInput
+                                value={cfTurnKeyId}
+                                onChange={val => {
+                                    setCfTurnKeyId(val);
+                                    settings.store.cfTurnKeyId = val;
+                                    clearTurnCache();
+                                }}
+                                placeholder="Cloudflare TURN Key ID"
+                            />
+                            <TextInput
+                                type="password"
+                                value={cfTurnApiToken}
+                                onChange={val => {
+                                    setCfTurnApiToken(val);
+                                    settings.store.cfTurnApiToken = val;
+                                    clearTurnCache();
+                                }}
+                                placeholder="Cloudflare TURN API Token"
+                            />
+                            <Text size="xs" style={{ color: "var(--text-muted)" }}>
+                                Generates short-lived TURN credentials via Cloudflare Realtime API. Viewers automatically receive temporary credentials in the offer.
+                            </Text>
+                        </div>
+                    )}
+
+                    {iceProvider === "custom-turn" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <TextInput
+                                value={customTurnUrls}
+                                onChange={val => {
+                                    setCustomTurnUrls(val);
+                                    settings.store.customTurnUrls = val;
+                                }}
+                                placeholder="turn:turn.example.com:3478, turns:turn.example.com:5349"
+                            />
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <TextInput
+                                    value={customTurnUsername}
+                                    onChange={val => {
+                                        setCustomTurnUsername(val);
+                                        settings.store.customTurnUsername = val;
+                                    }}
+                                    placeholder="Username (optional)"
+                                />
+                                <TextInput
+                                    type="password"
+                                    value={customTurnCredential}
+                                    onChange={val => {
+                                        setCustomTurnCredential(val);
+                                        settings.store.customTurnCredential = val;
+                                    }}
+                                    placeholder="Credential / Password (optional)"
+                                />
+                            </div>
+                        </div>
                     )}
                 </div>
 
+                {iceProvider !== "stun-only" && (
+                    <FormSwitch
+                        title="Force TURN Relay"
+                        description="Route all media through TURN (hides IP addresses and bypasses strict NAT)"
+                        value={forceTurnRelay}
+                        onChange={val => {
+                            setForceTurnRelay(val);
+                            settings.store.forceTurnRelay = val;
+                        }}
+                        hideBorder
+                    />
+                )}
+
                 <FormSwitch
                     title="Share Audio"
-                    description="Capture desktop/window audio (works best on Windows & macOS 13+)"
+                    description="Capture desktop/window audio (falls back to video-only if unsupported)"
                     value={audio}
                     onChange={setAudio}
                     hideBorder

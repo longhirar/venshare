@@ -2,20 +2,58 @@ import { definePluginSettings } from "@api/Settings";
 import { OptionType } from "@utils/types";
 
 export const settings = definePluginSettings({
-    stunProvider: {
+    iceProvider: {
         type: OptionType.SELECT,
-        description: "STUN server used for P2P NAT/IPv6 discovery",
+        description: "ICE / TURN server used for WebRTC connections",
         options: [
-            { label: "Cloudflare (stun.cloudflare.com)", value: "cf", default: true },
-            { label: "Google (stun.l.google.com)", value: "google" },
-            { label: "Custom STUN", value: "custom" }
+            { label: "Cloudflare TURN (Recommended)", value: "cf-turn", default: true },
+            { label: "Custom TURN / STUN Server", value: "custom-turn" },
+            { label: "STUN Only (Direct P2P, no relay)", value: "stun-only" }
         ]
     },
-    customStunUrl: {
+    cfTurnKeyId: {
         type: OptionType.STRING,
-        description: "Custom STUN URL (used when STUN server is set to Custom)",
-        default: "stun:stun.cloudflare.com:3478",
-        placeholder: "stun:example.com:3478"
+        description: "Cloudflare TURN Key ID (Cloudflare Dashboard -> Realtime -> TURN)",
+        default: "",
+        placeholder: "e.g. a1b2c3d4e5f6..."
+    },
+    cfTurnApiToken: {
+        type: OptionType.STRING,
+        description: "Cloudflare TURN API Token (used to generate short-lived ICE credentials)",
+        default: "",
+        placeholder: "Cloudflare TURN API Token"
+    },
+    cfTurnTtl: {
+        type: OptionType.SELECT,
+        description: "Cloudflare TURN ephemeral credential lifetime",
+        options: [
+            { label: "1 hour", value: 3600, default: true },
+            { label: "6 hours", value: 21600 },
+            { label: "24 hours", value: 86400 }
+        ]
+    },
+    customTurnUrls: {
+        type: OptionType.STRING,
+        description: "Custom TURN/STUN URL(s), comma-separated (used when provider is Custom)",
+        default: "",
+        placeholder: "turn:turn.example.com:3478, turns:turn.example.com:5349"
+    },
+    customTurnUsername: {
+        type: OptionType.STRING,
+        description: "Custom TURN username (optional)",
+        default: "",
+        placeholder: "username"
+    },
+    customTurnCredential: {
+        type: OptionType.STRING,
+        description: "Custom TURN credential / password (optional)",
+        default: "",
+        placeholder: "password"
+    },
+    forceTurnRelay: {
+        type: OptionType.BOOLEAN,
+        description: "Force TURN relay (hide IP / bypass strict NAT; requires TURN)",
+        default: false
     },
     defaultResolution: {
         type: OptionType.SELECT,

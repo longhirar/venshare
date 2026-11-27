@@ -1,6 +1,6 @@
 import { Constants, RestAPI } from "@webpack/common";
 
-import { encodeSignal, SignalPayload } from "./codec";
+import { encodeSignalMessages, SignalPayload } from "./codec";
 import { settings } from "./settings";
 
 interface PendingMessage {
@@ -27,34 +27,41 @@ export async function deleteSignalMessage(channelId: string, messageId: string):
     }
 }
 
+export async function deleteSignalMessages(channelId: string, messageIds: string[]): Promise<void> {
+    await Promise.all(messageIds.map(id => deleteSignalMessage(channelId, id)));
+}
+
 /**
- * Sends a compressed signaling message to the Discord channel and schedules auto-deletion.
+ * Sends a compressed signaling message (automatically chunked if > 1900 chars)
+ * to the Discord channel and schedules auto-deletion for all sent parts.
  */
 export async function sendSignal(
     channelId: string,
     payload: SignalPayload,
     overrideDelayMs?: number
-): Promise<string | null> {
-    const content = await encodeSignal(payload);
-    if (content.length > 2000) {
-        throw new Error(`Signaling payload too large (${content.length} chars)`);
+): Promise<string[]> {
+    const chunks = await encodeSignalMessages(payload);
+    const delayMs = overrideDelayMs ?? settings.store.autoDeleteDelayMs ?? 5000;
+    const messageIds: string[] = [];
+
+    for (const content of chunks) {
+        const res = await RestAPI.post({
+            url: Constants.Endpoints.MESSAGES(channelId),
+            body: { content }
+        });
+
+        const messageId: string | undefined = res?.body?.id;
+        if (!messageId) continue;
+
+        messageIds.push(messageId);
+        const timer = setTimeout(() => {
+            void deleteSignalMessage(channelId, messageId);
+        }, delayMs);
+
+        pendingDeletes.set(messageId, { channelId, messageId, timer });
     }
 
-    const res = await RestAPI.post({
-        url: Constants.Endpoints.MESSAGES(channelId),
-        body: { content }
-    });
-
-    const messageId: string | undefined = res?.body?.id;
-    if (!messageId) return null;
-
-    const delayMs = overrideDelayMs ?? settings.store.autoDeleteDelayMs ?? 5000;
-    const timer = setTimeout(() => {
-        void deleteSignalMessage(channelId, messageId);
-    }, delayMs);
-
-    pendingDeletes.set(messageId, { channelId, messageId, timer });
-    return messageId;
+    return messageIds;
 }
 
 /**

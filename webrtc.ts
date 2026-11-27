@@ -1,10 +1,9 @@
-import { showToast, UserStore } from "@webpack/common";
+import { SelectedChannelStore, showToast, UserStore } from "@webpack/common";
 
 import { SignalPayload } from "./codec";
-import { settings } from "./settings";
-import { deleteSignalMessage, sendSignal } from "./signaling";
+import { resolveRtcConfig } from "./ice";
+import { deleteSignalMessages, sendSignal } from "./signaling";
 import { venshareStore } from "./store";
-import { buildRtcConfig, StunProvider } from "./stun";
 
 export type ResolutionPreset = "720" | "1080" | "1440" | "source";
 
@@ -37,18 +36,12 @@ class WebRtcManager {
     private localStream: MediaStream | null = null;
     private currentBitrateMbps = 8;
     private viewerPeers = new Map<string, RTCPeerConnection>();
-    private outgoingOfferMsgs = new Map<string, { channelId: string; messageId: string }>();
+    private outgoingOfferMsgs = new Map<string, { channelId: string; messageIds: string[] }>();
     private viewerPc: RTCPeerConnection | null = null;
     private lastStatsBytes = 0;
     private lastStatsTimestamp = 0;
 
-    private getRtcConfig(): RTCConfiguration {
-        const provider = (settings.store.stunProvider ?? "cf") as StunProvider;
-        const customUrl = settings.store.customStunUrl ?? "";
-        return buildRtcConfig(provider, customUrl);
-    }
-
-    private async gatherCompleteSdp(pc: RTCPeerConnection, timeoutMs = 2500): Promise<string> {
+    private async gatherCompleteSdp(pc: RTCPeerConnection, timeoutMs = 5000): Promise<string> {
         if (pc.iceGatheringState === "complete" && pc.localDescription) {
             return pc.localDescription.sdp;
         }
@@ -93,6 +86,9 @@ class WebRtcManager {
     async startStreaming(channelId: string, opts: StartShareOptions): Promise<void> {
         await this.stopStreaming(channelId);
 
+        // Validate and warm up ICE/TURN credentials before capturing screen
+        await resolveRtcConfig();
+
         const videoMandatory: Record<string, unknown> = {
             chromeMediaSource: "desktop",
             chromeMediaSourceId: opts.sourceId,
@@ -105,9 +101,9 @@ class WebRtcManager {
             videoMandatory.maxHeight = dims.height;
         }
 
-        const constraints: MediaStreamConstraints = {
+        const buildConstraints = (withAudio: boolean): MediaStreamConstraints => ({
             video: { mandatory: videoMandatory } as unknown as MediaTrackConstraints,
-            audio: opts.audio
+            audio: withAudio
                 ? ({
                     mandatory: {
                         chromeMediaSource: "desktop",
@@ -115,9 +111,21 @@ class WebRtcManager {
                     }
                 } as unknown as MediaTrackConstraints)
                 : false
-        };
+        });
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        let stream: MediaStream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(buildConstraints(opts.audio));
+        } catch (err) {
+            if (!opts.audio) throw err;
+            // Fallback to video-only on platforms where desktop audio capture is unsupported
+            stream = await navigator.mediaDevices.getUserMedia(buildConstraints(false));
+            showToast({
+                text: "Desktop audio capture unavailable on this source; streaming video only.",
+                variant: "default"
+            });
+        }
+
         this.localStream = stream;
         this.currentBitrateMbps = opts.bitrateMbps;
 
@@ -129,7 +137,7 @@ class WebRtcManager {
 
         venshareStore.setStreaming(true, opts.sourceName, stream);
         showToast({
-            text: `Venshare P2P Live: ${opts.sourceName}`,
+            text: `Venshare Live: ${opts.sourceName}`,
             variant: "success"
         });
 
@@ -209,48 +217,63 @@ class WebRtcManager {
         const me = UserStore.getCurrentUser();
         if (!me || payload.from === me.id) return;
 
-        const currentVc = venshareStore.getState().currentVoiceChannelId;
+        const currentVc = venshareStore.getState().currentVoiceChannelId
+            ?? SelectedChannelStore.getVoiceChannelId()
+            ?? null;
         if (!currentVc || payload.vc !== currentVc) return;
 
-        switch (payload.t) {
-            case "announce":
-                venshareStore.upsertAvailableStream({
-                    userId: payload.from,
-                    username: payload.name,
-                    channelId: payload.vc,
-                    title: payload.title
-                });
-                break;
+        try {
+            switch (payload.t) {
+                case "announce":
+                    venshareStore.upsertAvailableStream({
+                        userId: payload.from,
+                        username: payload.name,
+                        channelId: payload.vc,
+                        title: payload.title
+                    });
+                    break;
 
-            case "stop":
-                venshareStore.removeAvailableStream(payload.from);
-                if (venshareStore.getState().watchingUserId === payload.from) {
-                    this.stopWatching();
-                }
-                break;
+                case "stop":
+                    venshareStore.removeAvailableStream(payload.from);
+                    if (venshareStore.getState().watchingUserId === payload.from) {
+                        this.stopWatching();
+                    }
+                    break;
 
-            case "watch":
-                if (payload.to !== me.id || !this.localStream) return;
-                await this.handleWatchRequest(payload.from, channelId, me.id);
-                break;
+                case "watch":
+                    if (payload.to !== me.id || !this.localStream) return;
+                    await this.handleWatchRequest(payload.from, channelId, me.id);
+                    break;
 
-            case "offer":
-                if (payload.to !== me.id) return;
-                await this.handleOffer(payload.from, channelId, me.id, payload.sdp);
-                break;
+                case "offer":
+                    if (payload.to !== me.id) return;
+                    await this.handleOffer(payload.from, channelId, me.id, payload.sdp, payload.ice);
+                    break;
 
-            case "answer":
-                if (payload.to !== me.id) return;
-                await this.handleAnswer(payload.from, payload.sdp);
-                break;
+                case "answer":
+                    if (payload.to !== me.id) return;
+                    await this.handleAnswer(payload.from, payload.sdp);
+                    break;
+            }
+        } catch (err) {
+            console.error("[Venshare] Signal handling failed:", payload.t, err);
+            if (payload.t === "offer" && venshareStore.getState().watchingUserId === payload.from) {
+                venshareStore.setWatching(payload.from, "failed", venshareStore.getState().remoteStream);
+            }
+            showToast({
+                text: `Venshare error (${payload.t}): ${err instanceof Error ? err.message : String(err)}`,
+                variant: "critical"
+            });
         }
     }
 
     private async handleWatchRequest(viewerId: string, channelId: string, myId: string): Promise<void> {
         if (!this.localStream) return;
 
+        const { rtcConfig, shareableIceServers } = await resolveRtcConfig();
+
         this.viewerPeers.get(viewerId)?.close();
-        const pc = new RTCPeerConnection(this.getRtcConfig());
+        const pc = new RTCPeerConnection(rtcConfig);
         this.viewerPeers.set(viewerId, pc);
         venshareStore.setActivePeersCount(this.viewerPeers.size);
 
@@ -273,22 +296,31 @@ class WebRtcManager {
         await pc.setLocalDescription(offer);
         const sdp = await this.gatherCompleteSdp(pc);
 
-        const messageId = await sendSignal(channelId, {
+        const messageIds = await sendSignal(channelId, {
             t: "offer",
             from: myId,
             to: viewerId,
             vc: channelId,
-            sdp
+            sdp,
+            ...(shareableIceServers ? { ice: shareableIceServers } : {})
         }, 10000);
 
-        if (messageId) {
-            this.outgoingOfferMsgs.set(viewerId, { channelId, messageId });
+        if (messageIds.length > 0) {
+            this.outgoingOfferMsgs.set(viewerId, { channelId, messageIds });
         }
     }
 
-    private async handleOffer(streamerId: string, channelId: string, myId: string, sdp: string): Promise<void> {
+    private async handleOffer(
+        streamerId: string,
+        channelId: string,
+        myId: string,
+        sdp: string,
+        offeredIceServers?: RTCIceServer[]
+    ): Promise<void> {
+        const { rtcConfig } = await resolveRtcConfig({ overrideIceServers: offeredIceServers });
+
         this.viewerPc?.close();
-        const pc = new RTCPeerConnection(this.getRtcConfig());
+        const pc = new RTCPeerConnection(rtcConfig);
         this.viewerPc = pc;
 
         const remoteStream = new MediaStream();
@@ -332,7 +364,7 @@ class WebRtcManager {
         const offerMsg = this.outgoingOfferMsgs.get(viewerId);
         if (offerMsg) {
             this.outgoingOfferMsgs.delete(viewerId);
-            void deleteSignalMessage(offerMsg.channelId, offerMsg.messageId);
+            void deleteSignalMessages(offerMsg.channelId, offerMsg.messageIds);
         }
     }
 
